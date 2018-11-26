@@ -1,5 +1,7 @@
-# BNMiasm (v1.0 alpha)
+# BNMiasm
+
 Author: **icecr4ck**
+
 _Using Miasm with Binary Ninja_
 
 ## Description:
@@ -19,7 +21,7 @@ This plugin requires the following minimum version of Binary Ninja:
 
 The following dependencies are required for this plugin:
 
- * requires [miasm2](https://github.com/cea-sec/miasm) to be installed.
+ * requires [miasm](https://github.com/cea-sec/miasm) to be installed.
 
 ## License
 
