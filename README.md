@@ -8,7 +8,7 @@ _Using Miasm with Binary Ninja_
 
 Collection of scripts based on Miasm to make easier the reverse engineering and the analyze of binaries with Binary Ninja.
 
-Currently, only the emulation of x86-32 in a sandbox is implemented, but more features are coming...
+Currently, only the emulation of x86/ARM/MIPS/PPC is implemented.
 
 ## Minimum Version
 
