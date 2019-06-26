@@ -1,21 +1,31 @@
-# BNMiasm
+# BNMiasm: 
 
 Author: **icecr4ck**
 
-_Using Miasm with Binary Ninja_
+_Visualize Miasm IR in Binary Ninja_
 
 ## Description:
 
-Collection of scripts based on Miasm to make easier the reverse engineering and the analyze of binaries with Binary Ninja.
+Plugin to visualize Miasm IR in Binary Ninja.
 
-Currently, only the emulation of x86-32 in a sandbox is implemented, but more features are coming...
+Different levels of simplifications have been implemented:
+* common simplifications ([IRCFGSimplifierCommon](https://github.com/cea-sec/miasm/blob/master/miasm/analysis/simplifier.py#L76) class in Miasm)
+* SSA simplification (based on [IRCFGSimplifierSSA](https://github.com/cea-sec/miasm/blob/master/miasm/analysis/simplifier.py#L123))
+* SSA and UnSSA passes (based on [IRCFGSimplifierSSA](https://github.com/cea-sec/miasm/blob/master/miasm/analysis/simplifier.py#L123) as well)
+
+To use the plugin, just select which view you want to display in the View menu (View -> Miasm).
+
+## Screenshots
+
+![](screenshots/macho_simp_ir.png)
+![](screenshots/elf_ssa_unssa_ir.png)
 
 ## Minimum Version
 
 This plugin requires the following minimum version of Binary Ninja:
 
- * release - 9999
- * dev - 1.0.dev-576
+ * release - 1.2
+ * dev - 1.1.dev-1742
 
 ## Required Dependencies
 
