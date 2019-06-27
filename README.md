@@ -1,4 +1,4 @@
-# BNMiasm: 
+# BNMiasm 
 
 Author: **icecr4ck**
 
