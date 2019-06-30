@@ -1,10 +1,15 @@
+# -*- coding: utf-8 -*-
+
 from future.utils import viewvalues, viewitems
+
+from PySide2.QtGui import QPalette
+from PySide2.QtWidgets import QLabel, QHBoxLayout
 
 from binaryninja.flowgraph import FlowGraph, FlowGraphNode
 from binaryninja.function import InstructionTextToken, DisassemblyTextLine
 from binaryninja.enums import BranchType, InstructionTextTokenType, SymbolType
 from binaryninja.types import Symbol
-from binaryninjaui import FlowGraphWidget, ViewType
+from binaryninjaui import FlowGraphWidget, ViewType, UIActionHandler, UIAction, StatusBarWidget, Menu, ContextMenuManager, FlowGraphHistoryEntry
 
 from miasm.analysis.machine import Machine
 from miasm.analysis.simplifier import IRCFGSimplifierCommon, IRCFGSimplifierSSA
@@ -16,6 +21,10 @@ from miasm.expression.simplifications import expr_simp
 from miasm.ir.ir import IRBlock, AssignBlock
 
 archs = { "x86":"x86_32", "x86_64":"x86_64", "armv7":"arml", "aarch64":"aarch64l", "mips32":"mips32l", "powerpc":"ppc32b"}
+
+TYPE_GRAPH_IR = 0
+TYPE_GRAPH_IRSSA = 1
+TYPE_GRAPH_IRSSAUNSSA = 2
 
 def is_addr_ro_variable(bs, addr, size):
     """
@@ -29,6 +38,142 @@ def is_addr_ro_variable(bs, addr, size):
     except IOError:
         return False
     return True
+
+
+class MiasmOptionsWidget(QLabel):
+
+    def __init__(self, parent):
+        super(MiasmOptionsWidget, self).__init__(parent)
+        self.statusBarWidget = parent
+
+        self.setBackgroundRole(QPalette.Highlight)
+        self.setForegroundRole(QPalette.WindowText)
+        self.setText(" Options ▾ ")
+
+        self.contextMenuManager = ContextMenuManager(self)
+
+        self.menu = Menu()
+        self.actionHandler = UIActionHandler()
+        self.registerActions()
+        self.addActions()
+        self.bindActions()
+
+        self.actionHandler.setChecked("IR graph", True)
+
+    def registerActions(self):
+        UIAction.registerAction("IR graph")
+        UIAction.registerAction("IR graph (SSA)")
+        UIAction.registerAction("IR graph (SSA + unSSA)")
+        UIAction.registerAction("Simplify code")
+        UIAction.registerAction("Subcalls don't change stack")
+        UIAction.registerAction("Load static memory")
+
+    def addActions(self):
+        self.menu.addAction("IR graph", "Transformations")
+        self.menu.addAction("IR graph (SSA)", "Transformations")
+        self.menu.addAction("IR graph (SSA + unSSA)", "Transformations")
+        self.menu.addAction("Simplify code", "Options")
+        self.menu.addAction("Subcalls don't change stack", "Options")
+        self.menu.addAction("Load static memory", "Options")
+
+    def bindActions(self):
+        self.actionHandler.bindAction("IR graph", UIAction(self.on_ir_graph))
+        self.actionHandler.bindAction("IR graph (SSA)", UIAction(self.on_ssa_simp))
+        self.actionHandler.bindAction("IR graph (SSA + unSSA)", UIAction(self.on_unssa_simp))
+        self.actionHandler.bindAction("Simplify code", UIAction(self.on_simp))
+        self.actionHandler.bindAction("Subcalls don't change stack", UIAction(self.on_dontmodstack))
+        self.actionHandler.bindAction("Load static memory", UIAction(self.on_loadmem))
+
+    def mousePressEvent(self, event):
+        self.contextMenuManager.show(self.menu, self.actionHandler)
+
+    def enterEvent(self, event):
+        self.setAutoFillBackground(True)
+        self.setForegroundRole(QPalette.HighlightedText)
+        QLabel.enterEvent(self, event)
+
+    def leaveEvent(self, event):
+        self.setAutoFillBackground(False)
+        self.setForegroundRole(QPalette.WindowText)
+        QLabel.leaveEvent(self, event)
+
+    def on_ir_graph(self, uiActionContext):
+        action = "IR graph"
+        if self.actionHandler.isChecked(action):
+            return
+        self.actionHandler.setChecked("IR graph (SSA)", False)
+        self.actionHandler.setChecked("IR graph (SSA + unSSA)", False)
+        self.actionHandler.setChecked(action, True)
+        self.statusBarWidget.miasmIRGraphView.type_graph = TYPE_GRAPH_IR
+
+        graph = self.statusBarWidget.miasmIRGraphView.get_graph()
+        self.statusBarWidget.miasmIRGraphView.setGraph(graph)
+
+
+    def on_ssa_simp(self, uiActionContext):
+        action = "IR graph (SSA)"
+        if self.actionHandler.isChecked(action):
+            return
+        self.actionHandler.setChecked("IR graph", False)
+        self.actionHandler.setChecked("IR graph (SSA + unSSA)", False)
+        self.actionHandler.setChecked(action, True)
+        self.statusBarWidget.miasmIRGraphView.type_graph = TYPE_GRAPH_IRSSA
+
+        graph = self.statusBarWidget.miasmIRGraphView.get_graph()
+        self.statusBarWidget.miasmIRGraphView.setGraph(graph)
+
+    def on_unssa_simp(self, uiActionContext):
+        action = "IR graph (SSA + unSSA)"
+        if self.actionHandler.isChecked(action):
+            return
+        self.actionHandler.setChecked("IR graph", False)
+        self.actionHandler.setChecked("IR graph (SSA)", False)
+        self.actionHandler.setChecked(action, True)
+        self.statusBarWidget.miasmIRGraphView.type_graph = TYPE_GRAPH_IRSSAUNSSA
+
+        graph = self.statusBarWidget.miasmIRGraphView.get_graph()
+        self.statusBarWidget.miasmIRGraphView.setGraph(graph)
+
+    def on_simp(self, uiActionContext):
+        action = "Simplify code"
+        action_state = not self.actionHandler.isChecked(action)
+        self.statusBarWidget.miasmIRGraphView.simplify = action_state
+        self.actionHandler.setChecked(action, action_state)
+
+        graph = self.statusBarWidget.miasmIRGraphView.get_graph()
+        self.statusBarWidget.miasmIRGraphView.setGraph(graph)
+
+    def on_dontmodstack(self, uiActionContext):
+        action = "Subcalls don't change stack"
+        action_state = not self.actionHandler.isChecked(action)
+        self.statusBarWidget.miasmIRGraphView.dontmodstack = action_state
+        self.actionHandler.setChecked(action, action_state)
+
+        graph = self.statusBarWidget.miasmIRGraphView.get_graph()
+        self.statusBarWidget.miasmIRGraphView.setGraph(graph)
+
+    def on_loadmem(self, uiActionContext):
+        action = "Load static memory"
+        action_state = not self.actionHandler.isChecked(action)
+        self.statusBarWidget.miasmIRGraphView.loadmemint = action_state
+        self.actionHandler.setChecked(action, action_state)
+
+        graph = self.statusBarWidget.miasmIRGraphView.get_graph()
+        self.statusBarWidget.miasmIRGraphView.setGraph(graph)
+
+
+class MiasmStatusBarWidget(StatusBarWidget):
+
+    def __init__(self, parent):
+        super(MiasmStatusBarWidget, self).__init__(parent)
+
+        self.miasmIRGraphView = parent
+
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(0,0,0,0)
+
+        self.options = MiasmOptionsWidget(self)
+        self.layout.addWidget(self.options)
 
 
 class MiasmIRGraph(FlowGraph):
@@ -151,19 +296,27 @@ class MiasmIRGraph(FlowGraph):
 
 class MiasmIRGraphView(FlowGraphWidget):
 
-    def __init__(self, parent, data, do_simplify, do_ssa, do_ssaunssa):
+    def __init__(self, parent, data):
         self.data = data
         self.function = data.entry_function
-        self.simplify = do_simplify
-        self.ssa = do_ssa
-        self.ssaunssa = do_ssaunssa
+
+        self.simplify = False
+        self.dontmodstack = False
+        self.loadmemint = False
+        self.type_graph = TYPE_GRAPH_IR
+
         if self.function is None:
             graph = None
         else:
-            graph = MiasmIRGraph(self.get_ircfg(do_simplify, do_ssa, do_ssaunssa))
+            graph = self.get_graph()
         super(MiasmIRGraphView, self).__init__(parent, data, graph)
 
-    def get_ircfg(self, do_simplify, do_ssa, do_ssaunssa):
+    def get_graph(self):
+        simplify = self.simplify
+        dontmodstack = self.dontmodstack
+        loadmemint = self.loadmemint
+        type_graph = self.type_graph
+
         bin_str = ""
         for s in self.data.segments:
             bin_str += self.data.read(s.start, len(s))
@@ -177,8 +330,24 @@ class MiasmIRGraphView(FlowGraphWidget):
 
         asmcfg = mdis.dis_multiblock(self.function.start)
         entry_points = set([mdis.loc_db.get_offset_location(self.function.start)])
+        
+        
+        class IRADelModCallStack(machine.ira):
+            def call_effects(self, addr, instr):
+                assignblks, extra = super(IRADelModCallStack, self).call_effects(addr, instr)
+                if not dontmodstack:
+                    return assignblks, extra
+                out = []
+                for assignblk in assignblks:
+                    dct = dict(assignblk)
+                    dct = {
+                        dst:src for (dst, src) in viewitems(dct) if dst != self.sp
+                    }
+                    out.append(AssignBlock(dct, assignblk.instr))
+                return out, extra
 
-        ir_arch = machine.ira(mdis.loc_db)
+
+        ir_arch = IRADelModCallStack(mdis.loc_db)
         ircfg = ir_arch.new_ircfg_from_asmcfg(asmcfg)
 
         for irb in list(viewvalues(ircfg.blocks)):
@@ -193,12 +362,12 @@ class MiasmIRGraphView(FlowGraphWidget):
 
         head = list(entry_points)[0]
 
-        if do_simplify:
+        if simplify:
             ircfg_simplifier = IRCFGSimplifierCommon(ir_arch)
             ircfg_simplifier.simplify(ircfg, head)
 
-        if not (do_ssa or do_ssaunssa):
-            return self.add_names(ircfg)
+        if type_graph == TYPE_GRAPH_IR:
+            return MiasmIRGraph(self.add_names(ircfg))
 
 
         class IRAOutRegs(machine.ira):
@@ -233,16 +402,17 @@ class MiasmIRGraphView(FlowGraphWidget):
         class CustomIRCFGSimplifierSSA(IRCFGSimplifierSSA):
             def do_simplify(self, ssa, head):
                 modified = super(CustomIRCFGSimplifierSSA, self).do_simplify(ssa, head)
-                modified |= load_from_int(ssa.graph, bs, is_addr_ro_variable)
+                if loadmemint:
+                    modified |= load_from_int(ssa.graph, bs, is_addr_ro_variable)
                 return modified
 
             def simplify(self, ircfg, head):
                 ssa = self.ircfg_to_ssa(ircfg, head)
                 ssa = self.do_simplify_loop(ssa, head)
 
-                if do_ssa:
+                if type_graph == TYPE_GRAPH_IRSSA:
                     ret = ssa.graph
-                elif do_ssaunssa:
+                elif type_graph == TYPE_GRAPH_IRSSAUNSSA:
                     ircfg = self.ssa_to_unssa(ssa, head)
                     ircfg_simplifier = IRCFGSimplifierCommon(self.ir_arch)
                     ircfg_simplifier.simplify(ircfg, head)
@@ -260,7 +430,8 @@ class MiasmIRGraphView(FlowGraphWidget):
         head = list(entry_points)[0]
         simplifier = CustomIRCFGSimplifierSSA(ir_arch)
         ircfg = simplifier.simplify(ircfg, head)
-        return self.add_names(self.clean_ircfg(ircfg, head))
+
+        return MiasmIRGraph(self.add_names(ircfg))
 
     def add_names(self, ircfg):
         for name, symbol in viewitems(self.data.symbols):
@@ -276,12 +447,6 @@ class MiasmIRGraphView(FlowGraphWidget):
         if start_loc_key and not ircfg.loc_db.get_location_names(start_loc_key):
             ircfg.loc_db.add_location_name(start_loc_key, self.function.name)
 
-        return ircfg
-
-    def clean_ircfg(self, ircfg, head):
-        for leaf_lk in ircfg.heads():
-            if leaf_lk != head:
-                ircfg.del_block(ircfg.loc_key_to_block(leaf_lk))
         return ircfg
 
     def navigate(self, addr):
@@ -307,27 +472,44 @@ class MiasmIRGraphView(FlowGraphWidget):
 
         # Navigate to the correct function
         self.function = func
-        graph = MiasmIRGraph(self.get_ircfg(self.simplify, self.ssa, self.ssaunssa))
+        graph = self.get_graph()
         self.setGraph(graph, addr)
         return True
+
+    def getHistoryEntry(self):
+        class MiasmIRGraphHistoryEntry(FlowGraphHistoryEntry):
+            def __init__(self, function, simplify, dontmodstack, loadmemint, type_graph):
+                super(MiasmIRGraphHistoryEntry, self).__init__()
+                self.function = function
+                self.simplify = simplify
+                self.dontmodstack = dontmodstack
+                self.loadmemint = loadmemint
+                self.type_graph = type_graph
+
+        result = MiasmIRGraphHistoryEntry(self.function, self.simplify, self.dontmodstack, self.loadmemint, self.type_graph)
+        self.populateDefaultHistoryEntry(result)
+        return result
+
+    def navigateToHistoryEntry(self, entry):
+        if hasattr(entry, 'function') and hasattr(entry, 'type_graph'):
+            self.function = entry.function
+            self.simplify = entry.simplify
+            self.dontmodstack = entry.dontmodstack
+            self.loadmemint = entry.loadmemint
+            self.type_graph = entry.type_graph
+
+            graph = self.get_graph()
+            self.setGraph(graph)
+        super(MiasmIRGraphView, self).navigateToHistoryEntry(entry)
+
+    def getStatusBarWidget(self):
+        return MiasmStatusBarWidget(self)
 
 
 class MiasmIRGraphViewType(ViewType):
 
     def __init__(self, do_simplify=False, do_ssa=False, do_ssaunssa=False):
-        self.simplify = do_simplify
-        self.ssa = do_ssa
-        self.ssaunssa = do_ssaunssa
-        if do_simplify:
-            super(MiasmIRGraphViewType, self).__init__("Miasm IR graph (simplified)", "Miasm\\IR graph (simplified)")
-        elif do_ssa:
-            self.simplify = True
-            super(MiasmIRGraphViewType, self).__init__("Miasm IR graph (SSA)", "Miasm\\IR graph (SSA)")
-        elif do_ssaunssa:
-            self.simplify = True
-            super(MiasmIRGraphViewType, self).__init__("Miasm IR graph (SSA + UnSSA)", "Miasm\\IR graph (SSA + UnSSA)")
-        else:
-            super(MiasmIRGraphViewType, self).__init__("Miasm IR graph", "Miasm\\IR graph")
+        super(MiasmIRGraphViewType, self).__init__("Miasm IR Graph", "Miasm IR Graph")
 
     def getPriority(self, data, filename):
         if data.executable:
@@ -335,10 +517,7 @@ class MiasmIRGraphViewType(ViewType):
         return 0
 
     def create(self, data, view_frame):
-        return MiasmIRGraphView(view_frame, data, self.simplify, self.ssa, self.ssaunssa)
+        return MiasmIRGraphView(view_frame, data)
 
 
 ViewType.registerViewType(MiasmIRGraphViewType())
-ViewType.registerViewType(MiasmIRGraphViewType(do_simplify=True))
-ViewType.registerViewType(MiasmIRGraphViewType(do_ssa=True))
-ViewType.registerViewType(MiasmIRGraphViewType(do_ssaunssa=True))
