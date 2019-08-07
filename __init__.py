@@ -109,7 +109,6 @@ class MiasmOptionsWidget(QLabel):
         graph = self.statusBarWidget.miasmIRGraphView.get_graph()
         self.statusBarWidget.miasmIRGraphView.setGraph(graph)
 
-
     def on_ssa_simp(self, uiActionContext):
         action = "IR graph (SSA)"
         if self.actionHandler.isChecked(action):
